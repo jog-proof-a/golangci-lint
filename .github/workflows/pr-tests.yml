@@ -88,42 +88,6 @@ jobs:
           # Always run the tests: never replay results from the restored build cache.
           GOFLAGS: -count=1
 
-  tests-on-macos:
-    needs: golangci-lint # run after golangci-lint action to not produce duplicated errors
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        id: setup-go
-        with:
-          go-version: ${{ env.GO_VERSION }} # test only the latest go version to speed up CI
-          # The Go caches are handled by the steps below: the built-in cache only restores on an exact go.sum match,
-          # so every pull request that changes go.sum (most dependabot PRs) recompiled everything from scratch.
-          cache: false
-      - name: Get Go cache paths
-        id: go-paths
-        shell: bash
-        run: |
-          echo "build=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
-          echo "mod=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
-      - name: Go cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ${{ steps.go-paths.outputs.build }}
-            ${{ steps.go-paths.outputs.mod }}
-          # One key per job and Go version; on a go.sum change, fall back to the newest cache of the same job and Go version.
-          key: go-${{ github.job }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('go.sum') }}
-          restore-keys: |
-            go-${{ github.job }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.setup-go.outputs.go-version }}-
-      - name: Run tests
-        run: make test
-        env:
-          # Always run the tests: never replay results from the restored build cache.
-          GOFLAGS: -count=1
-
   tests-on-unix:
     needs: golangci-lint # run after golangci-lint action to not produce duplicated errors
     strategy:
