@@ -30,37 +30,47 @@ func InstallGolangciLint(tb testing.TB) string {
 
 	parentPath := findMakefile(tb)
 
+	if ok, _ := strconv.ParseBool(os.Getenv(envGolangciLintInstalled)); ok {
+		// The binary is built before running the tests (ex: `make test`) and is never rebuilt during the run,
+		// so it can be used directly.
+		// Copying it for each test is expensive (~200 copies of a ~70MB binary),
+		// especially on Windows where each new executable is scanned by the antivirus.
+		abs, err := filepath.Abs(filepath.Join(parentPath, binaryName))
+		require.NoError(tb, err)
+
+		return abs
+	}
+
 	// Avoids concurrent builds and copies (before the end of the build).
 	f := flock.New(filepath.Join(parentPath, "test.lock"))
 
-	if ok, _ := strconv.ParseBool(os.Getenv(envGolangciLintInstalled)); !ok {
-		err := f.Lock()
-		require.NoError(tb, err)
+	err := f.Lock()
+	require.NoError(tb, err)
 
-		defer func() {
-			errU := f.Unlock()
-			if errU != nil {
-				tb.Logf("Can't unlock test.lock: %v", errU)
-			}
-		}()
-
-		builtLock.Lock()
-		defer builtLock.Unlock()
-
-		if !built {
-			cmd := exec.CommandContext(tb.Context(), "make", "-C", parentPath, "build")
-
-			output, err := cmd.CombinedOutput()
-			require.NoError(tb, err, "can't install golangci-lint %s", string(output))
-
-			built = true
+	defer func() {
+		errU := f.Unlock()
+		if errU != nil {
+			tb.Logf("Can't unlock test.lock: %v", errU)
 		}
+	}()
+
+	builtLock.Lock()
+	defer builtLock.Unlock()
+
+	if !built {
+		cmd := exec.CommandContext(tb.Context(), "make", "-C", parentPath, "build")
+
+		output, errC := cmd.CombinedOutput()
+		require.NoError(tb, errC, "can't install golangci-lint %s", string(output))
+
+		built = true
 	}
 
-	// Allow tests to avoid edge-cases with concurrent runs.
+	// Allow tests to avoid edge-cases with concurrent runs:
+	// another test process can rebuild the binary while this one is using it.
 	binPath := filepath.Join(tb.TempDir(), binaryName)
 
-	err := copyFile(filepath.Join(parentPath, binaryName), binPath)
+	err = copyFile(filepath.Join(parentPath, binaryName), binPath)
 	require.NoError(tb, err)
 
 	abs, err := filepath.Abs(binPath)
